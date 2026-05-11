@@ -8,7 +8,10 @@ port = 3000
 bind_host = "127.0.0.1"           # Safer default. Use "0.0.0.0" only behind a trusted gateway/firewall.
 ha_token = ""                     # Only needed when Home Assistant service is enabled below. Or set HA_TOKEN env var.
 llm_model_name = "phi"            # For prompt optimization. Options: nemotron-4b, tinyllama, llama, qwen, phi
-whisper_model = "/opt/geniepod/models/ggml-small.bin"
+whisper_model = "/opt/geniepod/models/ggml-tiny.bin"   # alpha.5 default — RTF ~0.3 on
+                                  # Orin Nano. Swap to ggml-small.bin (488 MB) for higher
+                                  # accuracy at ~5x latency, or ggml-base.bin (142 MB) for
+                                  # a middle ground. Files live in /opt/geniepod/models/.
 whisper_port = 0                  # 0 = CLI mode; set to 8178 for server mode.
 whisper_cli_path = "/opt/geniepod/bin/whisper-cli"
 stt_language = "auto"             # "auto" or a language code like "en", "es", "de", "zh".
