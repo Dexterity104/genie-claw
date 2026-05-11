@@ -94,10 +94,12 @@ deploy-config:
 		sudo chown -R $(JETSON_USER):$(JETSON_USER) $(INSTALL_DIR)/data'
 	scp deploy/config/geniepod.toml $(JETSON_TARGET):/tmp/geniepod.toml
 	scp deploy/config/mosquitto.conf $(JETSON_TARGET):/tmp/mosquitto.conf
-	ssh $(JETSON_TARGET) 'sudo cp -n /tmp/geniepod.toml /etc/geniepod/ && \
-		sudo cp -n /tmp/mosquitto.conf /etc/geniepod/ && \
+	ssh $(JETSON_TARGET) 'sudo cp /tmp/geniepod.toml /etc/geniepod/geniepod.toml && \
+		sudo cp /tmp/mosquitto.conf /etc/geniepod/mosquitto.conf && \
 		sudo chmod 600 /etc/geniepod/geniepod.toml /etc/geniepod/mosquitto.conf'
-	@echo "Config deployed (existing files NOT overwritten — using cp -n)"
+	@echo "Config deployed — /etc/geniepod/geniepod.toml refreshed from repo."
+	@echo "WARNING: any hand-edits on the target were overwritten. Keep secrets in env vars"
+	@echo "         (HA_TOKEN, TELEGRAM_BOT_TOKEN, etc.), not in geniepod.toml directly."
 
 deploy-systemd:
 	scp deploy/systemd/*.service deploy/systemd/*.target $(JETSON_TARGET):/tmp/

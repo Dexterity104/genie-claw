@@ -24,12 +24,15 @@ audio_device = "auto"             # Auto-detect: prefers Tegra APE (LyraT/I2S2) 
                                   #   "plughw:2,0"   — explicit USB card index
 audio_sample_rate = 48000         # USB headphone native sample rate. LyraT outputs 48 kHz,
                                   # ALSA plughw downmixes/resamples to whatever record_audio asks.
-voice_enabled = false             # Set true or use --voice flag to enable voice mode.
+voice_enabled = true              # Voice mode on by default in alpha.5 (push-to-talk).
+                                  # Set false on hosts without whisper/piper installed.
 voice_record_secs = 5             # Seconds to record per voice interaction.
 voice_continuous = true           # After response, auto-listen for follow-up without re-wake.
 voice_continuous_secs = 3         # Shorter recording for follow-up conversation.
 llm_model_path = "/opt/geniepod/models/phi-4-mini-instruct-q4_k_m.gguf"  # For GPU time-sharing in voice mode.
-wakeword_script = "/opt/geniepod/bin/genie-wake-listen.py"   # Wake word listener (empty = push-to-talk).
+wakeword_script = ""              # Empty = push-to-talk (alpha.5 default).
+                                  # Set to "/opt/geniepod/bin/genie-wake-listen.py" once
+                                  # wake-word detection is validated for your install.
 
 # Optional per-language Piper voices for multilingual speech output:
 # [core.voice_tts_models]
