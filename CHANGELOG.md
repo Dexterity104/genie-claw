@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Added
+
+- Jetson APE/I2S2 audio frontend support. `genie-audio.service` now runs
+  `/opt/geniepod/bin/genie-audio-init` at boot to configure the Tegra AHUB
+  route (`ADMAIF1 Mux = I2S2`, I2S2 codec master mode, framing, channel,
+  and bit-format controls) so an external I2S source on the Jetson 40-pin
+  header — e.g. ESP32-LyraT V4.3 via JP4 — is surfaced through ALSA as
+  `plughw:APE,0`. The script is idempotent, waits up to 30 s for the APE
+  card to enumerate, and exits cleanly on hosts without the I2S2 overlay.
+- `detect-audio-device.sh` now prefers `plughw:APE,0` when `ADMAIF1 Mux` is
+  routed to `I2S2`, falling back to USB audio and then card 0.
+- `genie-core::detect_audio_device` delegates to the deploy script when
+  installed, so `audio_device = "auto"` works for both LyraT and USB users
+  without touching `/etc/geniepod/geniepod.toml`.
+- `doc/lyrat-jetson-audio.md` — GenieClaw-side install slice for the
+  LyraT-on-Jetson audio frontend. Hardware bring-up (firmware, wiring,
+  Jetson-IO overlay, byte-exact verification) lives in the
+  `ai-hardware-engineer-roadmap` LyraT-Jetson guide; this page covers only
+  the genie-claw integration, reboot persistence, and known limitations.
+
 ### Changed
 
 - `genie-core` now binds to `127.0.0.1` by default through

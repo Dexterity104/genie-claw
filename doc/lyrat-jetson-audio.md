@@ -88,6 +88,110 @@ If the test WAV is silent, work back through the roadmap guide §14 ("Verified
 test result — Jetson side") — that section enumerates the failure modes and
 which `amixer` control or wire to inspect for each.
 
+## Verified on real Jetson + LyraT V4.3 (2026-05-11)
+
+End-to-end bring-up from cross-compile to live audio capture through the AHUB.
+
+### Cross-compile + deploy from a Linux build host
+
+From an x86_64 Ubuntu build VM (`tiny@tiny-virtual-machine`) with
+`gcc-aarch64-linux-gnu` installed and `rustup target add aarch64-unknown-linux-gnu`:
+
+```bash
+make jetson      JETSON_HOST=<jetson> JETSON_USER=<user>
+make deploy-binaries deploy-config deploy-systemd deploy-setup \
+                 JETSON_HOST=<jetson> JETSON_USER=<user>
+```
+
+Five aarch64 release binaries (`genie-core` 4.3 MB, others 0.9 – 2.3 MB)
+landed in `/opt/geniepod/bin/`. The audio init script and updated
+`detect-audio-device.sh` landed alongside.
+
+### Boot-time route setup ran cleanly
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now genie-audio.service
+sudo systemctl status genie-audio.service --no-pager
+```
+
+```
+● genie-audio.service - GeniePod Audio Subsystem (ALSA I2S + VAD + AEC)
+     Active: active (exited) since 2026-05-10 21:31:09 EDT
+    Process: 231827 ExecStart=/opt/geniepod/bin/genie-audio-init (code=exited, status=0/SUCCESS)
+        CPU: 153ms
+```
+
+Service journal confirmed all ten `amixer cset` controls applied:
+
+```
+[genie-audio-init] configuring APE I2S2 → ADMAIF1 capture route
+[genie-audio-init]   ADMAIF1 Mux                       = I2S2
+[genie-audio-init]   I2S2 codec master mode            = cbm-cfm
+[genie-audio-init]   I2S2 codec frame mode             = i2s
+[genie-audio-init]   I2S2 Sample Rate                  = 48000
+[genie-audio-init]   I2S2 Capture Audio Channels       = 2
+[genie-audio-init]   I2S2 Capture Audio Bit Format     = 16
+[genie-audio-init]   I2S2 Client Channels              = 2
+[genie-audio-init]   I2S2 Client Bit Format            = 16
+[genie-audio-init]   ADMAIF1 Capture Audio Channels    = 2
+[genie-audio-init]   ADMAIF1 Capture Client Channels   = 2
+[genie-audio-init] done
+```
+
+### Auto-detect resolves to the LyraT path
+
+```bash
+$ /opt/geniepod/bin/detect-audio-device.sh
+plughw:APE,0
+```
+
+With `audio_device = "auto"` in `geniepod.toml`, `genie-core` shells out to
+this script and consumes the result — so no manual config edit was needed
+to switch from USB audio to the LyraT I2S2 path.
+
+### Mono capture (current voice-loop call shape)
+
+```bash
+$ arecord -D plughw:APE,0 -c 1 -r 16000 -f S16_LE -d 5 /tmp/test.wav
+$ sox /tmp/test.wav -n stat
+Samples read:             80000
+Maximum amplitude:     0.114044
+RMS     amplitude:     0.011949
+Mean    amplitude:    -0.000090
+Rough   frequency:          183
+Volume adjustment:        8.769
+```
+
+- `Samples read = 80000` = exactly `5 s × 16000 Hz × 1 ch` — **zero DMA
+  underruns** through the on-the-fly `48 kHz/stereo → 16 kHz/mono` plughw
+  conversion.
+- `Mean amplitude ≈ 0` — no DC offset; codec biasing is clean.
+- `Volume adjustment 8.769` → ~19 dB of headroom before clipping. If
+  capture is too quiet, raise ES8388 PGA gain in firmware (preferred) or
+  normalize downstream.
+
+### Two-mic verification
+
+Confirmed both LyraT capsules are alive by capturing stereo:
+
+```bash
+$ arecord -D plughw:APE,0 -c 2 -r 16000 -f S16_LE -d 5 /tmp/stereo.wav
+# LEFT  channel:  Maximum 0.084412   RMS 0.008612
+# RIGHT channel:  Maximum 0.074921   RMS 0.007612
+```
+
+L/R ratio ~1.13× — within normal onboard-mic sensitivity spread. This
+matters because ALSA's `(L+R)/2` downmix (used implicitly when `arecord -c 1`
+reads from a stereo source) acts as a passive broadside-pointing delay-and-sum
+beamformer. With both channels carrying real signal, the mono capture
+above gets ~3 dB of SNR gain over a single-mic capture for a speaker in
+front of the device — for free, without any new code in the voice loop.
+
+Active beamforming (steered DAS / GCC-PHAT DOA / MVDR) is not used in this
+alpha. Both mics being verified-alive simply means the path is ready for
+it whenever a future release wants to add it.
+
 ## Limitations / known gaps
 
 - Capture only. TTS playback goes through the Jetson's default audio sink
