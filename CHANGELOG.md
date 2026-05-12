@@ -4,6 +4,16 @@
 
 ### Changed
 
+- `voice_loop` now runs `stt::flush_mic_buffer` BEFORE printing the
+  "Recording N seconds — speak now!" / "Listening for follow-up" prompt,
+  rather than inside `record_audio` after the prompt. The flush is a 1 s
+  throwaway capture that drains stale samples (TTS residue, DMA carry-over)
+  between cycles. With the old ordering, the throwaway ran AFTER the user
+  saw the prompt, so the first ~1 s of speech went into the discarded
+  flush WAV — operators reported the opening of their commands being
+  chopped off. New ordering: flush is silent during the brief gap between
+  cycles, then prompt appears the instant arecord actually starts. Both
+  the push-to-talk path and the continuous follow-up path are fixed.
 - `record_audio`'s sox preprocessing chain now does dynamic-range
   compression with `compand 0.02,0.20 -50,-50,-25,-12,-5,-5 -2` before
   the final `gain -n -3` peak-normalize. The previous pipeline applied

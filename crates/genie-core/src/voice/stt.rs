@@ -412,7 +412,7 @@ impl SttEngine {
 /// 1 second of throwaway capture is enough to settle the I2S DMA on Jetson +
 /// LyraT V4.3. The arecord open/close also fully releases and re-acquires the
 /// device, resetting any kernel-side state.
-async fn flush_mic_buffer(device: &str, sample_rate: u32) {
+pub async fn flush_mic_buffer(device: &str, sample_rate: u32) {
     let flush_path = format!("/tmp/geniepod-flush-{}.wav", std::process::id());
     // Use -c 2 (stereo) for the same reason as the real capture: -c 1 on the
     // Tegra/LyraT plughw stack returns samples in half real time, so a 1 s
@@ -442,11 +442,10 @@ async fn flush_mic_buffer(device: &str, sample_rate: u32) {
 ///
 /// Returns the path to the recorded WAV file.
 pub async fn record_audio(device: &str, sample_rate: u32, duration_secs: u32) -> Result<String> {
-    // Drain any stale samples in the ALSA capture buffer before the real
-    // recording (TTS residue bleeding speaker→room→mic, plus DMA carry-over
-    // from prior cycles). This makes consecutive voice-loop cycles produce
-    // independent captures instead of one polluting the next.
-    flush_mic_buffer(device, sample_rate).await;
+    // NOTE: callers are expected to call `flush_mic_buffer` themselves BEFORE
+    // printing any "speak now" prompt to the user. Doing the flush here would
+    // cause the throwaway 1 s arecord to run *after* the user sees the
+    // prompt — chopping ~1 s off the start of the captured speech.
 
     let wav_path = format!("/tmp/geniepod-rec-{}.wav", std::process::id());
 
