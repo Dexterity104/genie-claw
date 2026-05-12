@@ -504,41 +504,58 @@ pub async fn record_audio(device: &str, sample_rate: u32, duration_secs: u32) ->
         "recording complete"
     );
 
-    // Band-pass filter + peak-normalize the captured audio before STT.
+    // Preprocess captured audio for STT.
     //
-    // Why band-pass FIRST:
-    //   The ES8388 ADC on LyraT V4.3 has a noticeable high-frequency noise
-    //   floor. Without filtering, sox's peak-normalization amplifies that
-    //   HF hiss along with speech, so after `gain -n -3` the dominant
-    //   spectral content can sit at 10 kHz+ instead of the 100-500 Hz
-    //   speech band — confirmed via `sox stat` showing rough frequency
-    //   ~10.5 kHz on a quiet test capture. Whisper then hears mostly hiss
-    //   and hallucinates assistant-stock phrases.
+    //   channels 1     — downmix stereo (captured by `arecord -c 2` above)
+    //                    to mono. sox's `channels 1` averages all input
+    //                    channels — for a stereo LyraT capture this is the
+    //                    passive broadside delay-and-sum beamformer pointed
+    //                    at the speaker.
+    //   highpass 100   — kill DC + sub-bass rumble (kept above the lowest
+    //                    male fundamentals around 80 Hz).
+    //   lowpass  7000  — kill ADC hiss and electronic noise above the
+    //                    speech band (kept above sibilance to preserve
+    //                    /s/, /f/, /sh/ phonemes for whisper).
+    //   compand …      — dynamic-range expand-the-quiet-bits. Before this,
+    //                    `gain -n -3` had to amplify both the loudest speech
+    //                    peak and any quiet speech segments by the same
+    //                    linear scalar — so when a user mumbled half their
+    //                    command, the loud parts ate the gain budget and
+    //                    the mumbled half stayed underwater (whisper would
+    //                    hear ambiguous low-level audio and fall back to
+    //                    assistant-stock hallucinations). The compand
+    //                    transfer function lifts input -25 dBFS to output
+    //                    -12 dBFS (~13 dB of expansion on quiet speech),
+    //                    keeps loud speech at -5 dBFS so it doesn't clip,
+    //                    and pins the floor at -50 dBFS so noise is NOT
+    //                    amplified into the speech band.
+    //   gain -n -3     — final peak-normalize the cleaned + compressed
+    //                    signal to -3 dBFS so whisper sees nominal
+    //                    speech-level audio.
     //
-    //   highpass 100  — kill DC + sub-bass rumble (kept above the lowest
-    //                   male fundamentals around 80 Hz).
-    //   lowpass  7000 — kill ADC hiss and electronic noise above the
-    //                   speech band (kept above sibilance to preserve /s/,
-    //                   /f/, /sh/ phonemes for whisper).
-    //   gain -n -3    — then peak-normalize the *clean* signal to -3 dBFS,
-    //                   so whisper sees nominal speech-level audio with
-    //                   the noise floor still relatively suppressed.
+    //   Compand args breakdown:
+    //     attack=0.02 release=0.20  — 20 ms attack / 200 ms release matches
+    //                                  speech syllable timing
+    //     -50,-50                   — noise floor stays at -50 dBFS
+    //     -25,-12                   — input -25 dBFS -> output -12 dBFS
+    //                                  (+13 dB on quiet speech)
+    //     -5,-5                     — loud speech (-5 dBFS) stays at -5
+    //     -2                        — slight makeup offset
     let normalized_path = format!("/tmp/geniepod-rec-{}-norm.wav", std::process::id());
     match Command::new("sox")
         .args([
             wav_path.as_str(),
             normalized_path.as_str(),
-            // Downmix stereo (captured by arecord -c 2 above) to mono. sox's
-            // `channels 1` effect averages all input channels into one — for
-            // a stereo LyraT capture this is mathematically the same as a
-            // passive broadside delay-and-sum beamformer pointed at the
-            // speaker.
             "channels",
             "1",
             "highpass",
             "100",
             "lowpass",
             "7000",
+            "compand",
+            "0.02,0.20",
+            "-50,-50,-25,-12,-5,-5",
+            "-2",
             "gain",
             "-n",
             "-3",
@@ -561,7 +578,7 @@ pub async fn record_audio(device: &str, sample_rate: u32, duration_secs: u32) ->
             let _ = tokio::fs::remove_file(&wav_path).await;
             tracing::info!(
                 path = %normalized_path,
-                "preprocessed audio (highpass 100 Hz, lowpass 7 kHz, peak-normalize -3 dBFS)"
+                "preprocessed audio (highpass 100 Hz, lowpass 7 kHz, compand quiet-speech lift, peak-normalize -3 dBFS)"
             );
             Ok(normalized_path)
         }
