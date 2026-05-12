@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### Changed
+
+- `voice_loop` now runs `stt::flush_mic_buffer` BEFORE printing the
+  "Recording N seconds — speak now!" / "Listening for follow-up" prompt,
+  rather than inside `record_audio` after the prompt. The flush is a 1 s
+  throwaway capture that drains stale samples (TTS residue, DMA carry-over)
+  between cycles. With the old ordering, the throwaway ran AFTER the user
+  saw the prompt, so the first ~1 s of speech went into the discarded
+  flush WAV — operators reported the opening of their commands being
+  chopped off. New ordering: flush is silent during the brief gap between
+  cycles, then prompt appears the instant arecord actually starts. Both
+  the push-to-talk path and the continuous follow-up path are fixed.
+- `record_audio`'s sox preprocessing chain now does dynamic-range
+  compression with `compand 0.02,0.20 -50,-50,-25,-12,-5,-5 -2` before
+  the final `gain -n -3` peak-normalize. The previous pipeline applied
+  a single linear gain to satisfy peak-normalize: if a user's loudest
+  syllable was at -5 dBFS and the quietest at -25 dBFS, BOTH got the
+  same scalar boost and the quiet syllables stayed buried under whisper's
+  hallucination threshold. With compand, quiet-speech input around
+  -25 dBFS now maps to -12 dBFS (+13 dB lift) while loud peaks stay
+  at -5 dBFS and the noise floor below -50 dBFS is NOT amplified.
+  Compand attack/release of 20 ms / 200 ms matches speech syllable
+  timing. Net effect on STT: whisper-small reaches whole-utterance
+  intelligibility on quieter LyraT captures that previously
+  produced assistant-stock hallucinations ("I'm here to help",
+  "feel free to ask"). Closes #6.
+
 ### Added
 
 - `genie-llm-warmup.service` — a oneshot systemd unit ordered `After=genie-llm.service`

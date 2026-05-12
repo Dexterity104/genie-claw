@@ -298,6 +298,11 @@ async fn run_with_wakeword(
                 // Small delay to ensure mic is fully released by wake word process.
                 tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
+                // Drain stale samples (TTS residue, DMA carry-over) BEFORE
+                // printing the prompt — otherwise the 1 s flush would
+                // overlap the start of the user's follow-up utterance.
+                stt::flush_mic_buffer(audio_device, voice_cfg.sample_rate).await;
+
                 eprintln!(
                     "[voice] Listening for follow-up ({} sec)...",
                     voice_cfg.voice_continuous_secs
@@ -803,6 +808,12 @@ async fn voice_cycle(
     conv_id: &str,
 ) -> bool {
     // Step 1: Record (fixed duration — reliable).
+    //
+    // Drain stale samples (TTS residue from the previous cycle, kernel-side
+    // DMA carry-over) BEFORE printing the prompt. Doing the flush inside
+    // record_audio would chop ~1 s off the start of the user's speech,
+    // because the user starts talking the moment they see "speak now!".
+    stt::flush_mic_buffer(audio_device, voice_cfg.sample_rate).await;
     eprintln!(
         "[voice] Recording {} seconds — speak now!",
         voice_cfg.record_secs
